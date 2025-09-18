@@ -1,0 +1,68 @@
+export const theme = {
+  colors: {
+    primary: '#4ECDC4',
+    primaryDark: '#45B7B8',
+    secondary: '#96CEB4',
+    accent: '#FFEAA7',
+    background: '#F8F9FA',
+    surface: '#FFFFFF',
+    text: '#2D3436',
+    textSecondary: '#636E72',
+    textLight: '#B2BEC3',
+    success: '#00B894',
+    warning: '#FDCB6E',
+    error: '#E17055',
+    calm: '#A8E6CF',
+    focus: '#88D8C0',
+    energy: '#FFD93D',
+    border: '#E9ECEF',
+    shadow: 'rgba(0, 0, 0, 0.1)',
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 16,
+    lg: 24,
+    xl: 32,
+    xxl: 48,
+  },
+  borderRadius: {
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 24,
+    full: 9999,
+  },
+  typography: {
+    h1: {
+      fontSize: 32,
+      fontWeight: '700' as const,
+      lineHeight: 40,
+    },
+    h2: {
+      fontSize: 24,
+      fontWeight: '600' as const,
+      lineHeight: 32,
+    },
+    h3: {
+      fontSize: 20,
+      fontWeight: '600' as const,
+      lineHeight: 28,
+    },
+    body: {
+      fontSize: 16,
+      fontWeight: '400' as const,
+      lineHeight: 24,
+    },
+    caption: {
+      fontSize: 14,
+      fontWeight: '400' as const,
+      lineHeight: 20,
+    },
+    small: {
+      fontSize: 12,
+      fontWeight: '400' as const,
+      lineHeight: 16,
+    },
+  },
+} as const;
