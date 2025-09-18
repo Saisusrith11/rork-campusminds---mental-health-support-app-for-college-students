@@ -1,8 +1,9 @@
 // API Configuration and Base Service
+import { getApiBaseUrl } from '@/constants/environment';
 
 // API Configuration
 export const API_CONFIG = {
-  BASE_URL: 'http://localhost:3000/api', // Change this to your API URL
+  BASE_URL: getApiBaseUrl(),
   TIMEOUT: 10000,
   HEADERS: {
     'Content-Type': 'application/json',
