@@ -1,11 +1,26 @@
 import createContextHook from '@nkzw/create-context-hook';
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './auth-store';
+
+// Conditional imports for notifications - only import if not in Expo Go
+let Notifications: any = null;
+let Device: any = null;
+let Constants: any = null;
+
+// Check if we're in Expo Go environment
+const isExpoGo = typeof __DEV__ !== 'undefined' && __DEV__ && Platform.OS !== 'web';
+
+if (!isExpoGo && Platform.OS !== 'web') {
+  try {
+    Notifications = require('expo-notifications');
+    Device = require('expo-device');
+    Constants = require('expo-constants');
+  } catch (error: any) {
+    console.log('Notifications not available in this environment:', error?.message || 'Unknown error');
+  }
+}
 
 interface NotificationData {
   id: string;
@@ -35,19 +50,23 @@ const STORAGE_KEY = 'campusminds_notifications';
 const SETTINGS_KEY = 'campusminds_notification_settings';
 
 // Configure notification behavior
-if (Platform.OS !== 'web') {
-  Notifications.setNotificationHandler({
-    handleNotification: async (notification) => {
-      const priority = notification.request.content.data?.priority || 'normal';
-      return {
-        shouldShowAlert: true,
-        shouldPlaySound: priority === 'urgent' || priority === 'high',
-        shouldSetBadge: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-      };
-    },
-  });
+if (Platform.OS !== 'web' && Notifications && !isExpoGo) {
+  try {
+    Notifications.setNotificationHandler({
+      handleNotification: async (notification: any) => {
+        const priority = notification.request.content.data?.priority || 'normal';
+        return {
+          shouldShowAlert: true,
+          shouldPlaySound: priority === 'urgent' || priority === 'high',
+          shouldSetBadge: true,
+          shouldShowBanner: true,
+          shouldShowList: true,
+        };
+      },
+    });
+  } catch (error: any) {
+    console.log('Failed to configure notification handler:', error?.message || 'Unknown error');
+  }
 }
 
 export const [NotificationProvider, useNotifications] = createContextHook(() => {
@@ -66,8 +85,8 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
   });
   const [expoPushToken, setExpoPushToken] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
-  const notificationListener = useRef<Notifications.Subscription | undefined>(undefined);
-  const responseListener = useRef<Notifications.Subscription | undefined>(undefined);
+  const notificationListener = useRef<any>(undefined);
+  const responseListener = useRef<any>(undefined);
 
   const saveNotifications = useCallback(async (notifs: NotificationData[]) => {
     if (!Array.isArray(notifs)) return;
@@ -148,69 +167,73 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
   }, []);
 
   const registerForPushNotificationsAsync = useCallback(async () => {
-    if (Platform.OS === 'web') {
-      console.log('Push notifications not supported on web');
+    if (Platform.OS === 'web' || isExpoGo || !Notifications || !Device) {
+      console.log('Push notifications not available in this environment');
       return;
     }
 
-    let token;
-    if (Device.isDevice) {
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
+    try {
+      let token;
+      if (Device.isDevice) {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        let finalStatus = existingStatus;
+        if (existingStatus !== 'granted') {
+          const { status } = await Notifications.requestPermissionsAsync();
+          finalStatus = status;
+        }
+        if (finalStatus !== 'granted') {
+          console.log('Failed to get push token for push notification!');
+          return;
+        }
+        try {
+          token = (await Notifications.getExpoPushTokenAsync({
+            projectId: Constants?.expoConfig?.extra?.eas?.projectId,
+          })).data;
+          console.log('Expo push token:', token);
+        } catch (error) {
+          console.log('Error getting push token:', error);
+        }
+      } else {
+        console.log('Must use physical device for Push Notifications');
       }
-      if (finalStatus !== 'granted') {
-        console.log('Failed to get push token for push notification!');
-        return;
+
+      if (Platform.OS === 'android' && Notifications) {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'default',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+        });
+
+        // Create channels for different notification types
+        await Notifications.setNotificationChannelAsync('emergency', {
+          name: 'Emergency Notifications',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF0000',
+          sound: 'default',
+        });
+
+        await Notifications.setNotificationChannelAsync('appointments', {
+          name: 'Appointment Reminders',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#4A90E2',
+        });
+
+        await Notifications.setNotificationChannelAsync('messages', {
+          name: 'Messages',
+          importance: Notifications.AndroidImportance.DEFAULT,
+          vibrationPattern: [0, 250],
+          lightColor: '#50C878',
+        });
       }
-      try {
-        token = (await Notifications.getExpoPushTokenAsync({
-          projectId: Constants.expoConfig?.extra?.eas?.projectId,
-        })).data;
-        console.log('Expo push token:', token);
-      } catch (error) {
-        console.log('Error getting push token:', error);
+
+      if (token) {
+        setExpoPushToken(token);
       }
-    } else {
-      console.log('Must use physical device for Push Notifications');
-    }
-
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-      });
-
-      // Create channels for different notification types
-      await Notifications.setNotificationChannelAsync('emergency', {
-        name: 'Emergency Notifications',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF0000',
-        sound: 'default',
-      });
-
-      await Notifications.setNotificationChannelAsync('appointments', {
-        name: 'Appointment Reminders',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#4A90E2',
-      });
-
-      await Notifications.setNotificationChannelAsync('messages', {
-        name: 'Messages',
-        importance: Notifications.AndroidImportance.DEFAULT,
-        vibrationPattern: [0, 250],
-        lightColor: '#50C878',
-      });
-    }
-
-    if (token) {
-      setExpoPushToken(token);
+    } catch (error: any) {
+      console.log('Failed to register for push notifications:', error?.message || 'Unknown error');
     }
   }, []);
 
@@ -243,36 +266,48 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
 
     initializeNotifications();
 
-    if (Platform.OS !== 'web') {
-      // Listen for incoming notifications
-      notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
-        const notificationData: NotificationData = {
-          id: notification.request.identifier,
-          title: notification.request.content.title || '',
-          body: notification.request.content.body || '',
-          data: notification.request.content.data,
-          timestamp: Date.now(),
-          read: false,
-          type: (notification.request.content.data?.type as NotificationData['type']) || 'system',
-          priority: (notification.request.content.data?.priority as NotificationData['priority']) || 'normal',
-          userRole: notification.request.content.data?.userRole as string | undefined,
-        };
-        addNotification(notificationData);
-      });
+    if (Platform.OS !== 'web' && Notifications && !isExpoGo) {
+      try {
+        // Listen for incoming notifications
+        notificationListener.current = Notifications.addNotificationReceivedListener((notification: any) => {
+          const notificationData: NotificationData = {
+            id: notification.request.identifier,
+            title: notification.request.content.title || '',
+            body: notification.request.content.body || '',
+            data: notification.request.content.data,
+            timestamp: Date.now(),
+            read: false,
+            type: (notification.request.content.data?.type as NotificationData['type']) || 'system',
+            priority: (notification.request.content.data?.priority as NotificationData['priority']) || 'normal',
+            userRole: notification.request.content.data?.userRole as string | undefined,
+          };
+          addNotification(notificationData);
+        });
 
-      // Listen for notification responses
-      responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-        const notificationId = response.notification.request.identifier;
-        markAsRead(notificationId);
-      });
+        // Listen for notification responses
+        responseListener.current = Notifications.addNotificationResponseReceivedListener((response: any) => {
+          const notificationId = response.notification.request.identifier;
+          markAsRead(notificationId);
+        });
+      } catch (error: any) {
+        console.log('Failed to set up notification listeners:', error?.message || 'Unknown error');
+      }
     }
 
     return () => {
-      if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
+      if (Notifications && notificationListener.current) {
+        try {
+          Notifications.removeNotificationSubscription(notificationListener.current);
+        } catch (error: any) {
+          console.log('Failed to remove notification listener:', error?.message || 'Unknown error');
+        }
       }
-      if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+      if (Notifications && responseListener.current) {
+        try {
+          Notifications.removeNotificationSubscription(responseListener.current);
+        } catch (error: any) {
+          console.log('Failed to remove response listener:', error?.message || 'Unknown error');
+        }
       }
     };
   }, [user]);
@@ -299,11 +334,24 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
     title: string,
     body: string,
     data: any = {},
-    trigger: Notifications.NotificationTriggerInput | null = null
+    trigger: any = null
   ) => {
-    if (Platform.OS === 'web') {
-      console.log('Local notifications not supported on web');
-      return;
+    if (Platform.OS === 'web' || isExpoGo || !Notifications) {
+      console.log('Local notifications not available in this environment');
+      // In Expo Go, just add to local notification list for UI purposes
+      const notification: NotificationData = {
+        id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        title,
+        body,
+        data,
+        timestamp: Date.now(),
+        read: false,
+        type: data.type || 'system',
+        priority: data.priority || 'normal',
+        userRole: user?.role,
+      };
+      await addNotification(notification);
+      return notification.id;
     }
 
     if (!settings.enabled) return;
@@ -342,6 +390,20 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
       return identifier;
     } catch (error) {
       console.error('Failed to schedule notification:', error);
+      // Fallback: add to local list anyway
+      const notification: NotificationData = {
+        id: `fallback_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        title,
+        body,
+        data,
+        timestamp: Date.now(),
+        read: false,
+        type: data.type || 'system',
+        priority: data.priority || 'normal',
+        userRole: user?.role,
+      };
+      await addNotification(notification);
+      return notification.id;
     }
   }, [settings, user, addNotification]);
 
@@ -349,11 +411,18 @@ export const [NotificationProvider, useNotifications] = createContextHook(() => 
   const sendAppointmentReminder = useCallback(async (appointmentData: any) => {
     if (Platform.OS === 'web') return;
     
-    const trigger: Notifications.TimeIntervalTriggerInput = {
-      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: appointmentData.reminderTime || 3600, // 1 hour before
-      repeats: false,
-    };
+    let trigger = null;
+    if (Notifications && !isExpoGo) {
+      try {
+        trigger = {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: appointmentData.reminderTime || 3600, // 1 hour before
+          repeats: false,
+        };
+      } catch (error: any) {
+        console.log('Failed to create trigger, using immediate notification');
+      }
+    }
     
     return scheduleLocalNotification(
       'Appointment Reminder',
