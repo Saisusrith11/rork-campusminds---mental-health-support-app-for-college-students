@@ -7,12 +7,14 @@ export const ENV = {
     API_BASE_URL: 'http://localhost:3000/api',
     WEB_API_BASE_URL: 'http://localhost:3000/api',
     MOBILE_API_BASE_URL: 'http://10.0.2.2:3000/api', // Android emulator
+    OFFLINE_MODE: true, // Enable offline mode for development
   },
   // Production environment
   production: {
     API_BASE_URL: 'https://your-production-api.com/api',
     WEB_API_BASE_URL: 'https://your-production-api.com/api',
     MOBILE_API_BASE_URL: 'https://your-production-api.com/api',
+    OFFLINE_MODE: false,
   },
 };
 
@@ -33,4 +35,9 @@ export const getApiBaseUrl = () => {
   }
   
   return config.MOBILE_API_BASE_URL;
+};
+
+// Check if offline mode is enabled
+export const isOfflineMode = () => {
+  return getEnvConfig().OFFLINE_MODE;
 };
